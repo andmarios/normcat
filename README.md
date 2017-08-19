@@ -10,6 +10,10 @@ It can understand files compressed with xz, gzip and lz4 and
 uncompresses automatically on the fly.
 
 Why? Because I needed to create a couple demos with streaming data.
+For example in the graph below, there are 3 normcat instances
+piping data to a kafka producer:
+
+![normcat_use](https://user-images.githubusercontent.com/1239679/29490368-2b4aad4a-8542-11e7-973a-223f66087353.png)
 
 
 ---
