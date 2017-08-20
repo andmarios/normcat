@@ -125,8 +125,8 @@ func main() {
 			// Even if we read an outdated or future dated value, it isn't
 			// very important because it can't affect the rate that much.
 			curMessages = numMessages
-			log.Printf("Messages sent - 10sec / total, new rate set at: %d / %d, %.2f msg/sec\n",
-				curMessages-lastMessages, curMessages, jitterLimit*rate.Limit(rateDivider))
+			log.Printf("Messages sent - %s / total, new rate set at: %d / %d, %.2f msg/sec\n",
+				*rateUpdate, curMessages-lastMessages, curMessages, jitterLimit*rate.Limit(rateDivider))
 			lastMessages = curMessages
 		}
 	}()
@@ -134,6 +134,11 @@ func main() {
 	// This function reads lines from the source (file, stdin) and dispatches
 	// them to workers. It keeps tracks of messages, cycling the source, etc.
 	go func() {
+		// TODO: we could move this inside the for loop  and always re-opening
+		// the file. This would let us cycle over bzip and normcat multiple files
+		// but I have to test if it will change the memory profile (or find a way
+		// to make it safe). Also not sure what will happen with small files where
+		// they may be overhead re-opening them.
 		data, reset := streamHandle()
 
 	readLoop:
