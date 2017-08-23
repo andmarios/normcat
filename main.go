@@ -63,7 +63,7 @@ func init() {
 var workerWg sync.WaitGroup
 var limiter *rate.Limiter
 var rateDivider = 1
-var dataFile string // set in init() of flags.go
+var inputFiles []string // set in init() of flags.go
 
 func main() {
 	// The dispatchBus will deliver the decoded messages to the workers.
@@ -134,31 +134,26 @@ func main() {
 	// This function reads lines from the source (file, stdin) and dispatches
 	// them to workers. It keeps tracks of messages, cycling the source, etc.
 	go func() {
-		// TODO: we could move this inside the for loop  and always re-opening
-		// the file. This would let us cycle over bzip and normcat multiple files
-		// but I have to test if it will change the memory profile (or find a way
-		// to make it safe). Also not sure what will happen with small files where
-		// they may be overhead re-opening them.
-		data, reset := streamHandle()
-
+		inputs := streamHandle()
 	readLoop:
 		for {
-			in := bufio.NewScanner(data)
-			in.Split(bufio.ScanLines)
-			for in.Scan() {
-				dispatchBus <- in.Text()
-				numMessages++
-				if numMessages == *lines {
-					break readLoop
+			for _, v := range inputs {
+				in := bufio.NewScanner(v.Data)
+				in.Split(bufio.ScanLines)
+				for in.Scan() {
+					dispatchBus <- in.Text()
+					numMessages++
+					if numMessages == *lines {
+						break readLoop
+					}
 				}
+				v.Reset()
 			}
 			if *cycle != true {
 				*lines = numMessages
 				//wait <- true
 				break readLoop
 			}
-			// Roll to the start of the file
-			reset()
 
 		}
 	}()
@@ -189,94 +184,108 @@ func worker(msgBus chan string) {
 	}
 }
 
+// source provides an io.Reader to read from source and
+// a close func to close the file when finish.
+type input struct {
+	Data  io.Reader
+	Reset func()
+}
+
 // streamHandle decides whether to read stdin or a file.
 // If it's  file, it tests for known compressed file types.
 // It returns an io.Reader which can be used to read data
 // from whichever source we set. It also returns the reset
 // method, which can be used to cycle to the start of the
 // file if needed.
-func streamHandle() (data io.Reader, reset func()) {
-	var source *os.File
-	var err error
+func streamHandle() (dataStreams []input) {
 
 	// In this case we read from stdin.
-	if dataFile == "" {
+	if len(inputFiles) == 0 {
+		var source *os.File
+
 		source = os.Stdin
 		*cycle = false
 		log.Println("Starting to process messages from stdin.")
-		data, reset = source, func() {}
+		dataStreams = append(dataStreams, input{source, func() {}})
 		return
 	}
 
 	// This is the case where we read from a file
-	source, err = os.Open(dataFile)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	// streamHandle will exit but normcat will continue, so we can't defer close()
-	// here. We wouldn't want anyway. As long as normcat runs, source should stay open.
-	// defer source.Close()
-	log.Printf("Starting to process messages from %s.\n", dataFile)
+	for k, _ := range inputFiles {
+		var source *os.File
+		var err error
+		var data io.Reader
+		var reset func()
 
-	// Code to read first 261 bytes of source and detect filetype.
-	var header [261]byte
-	_, err = source.Read(header[0:261])
-	if err != nil {
-		log.Println(err)
-	}
-
-	t, err := filetype.Get(header[0:261])
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Return to the start of the file
-	source.Seek(0, 0)
-
-	// Depending on extension, set proper data and reset functions.
-	switch t.Extension {
-	case "xz":
-		log.Println("Using xz")
-		data, err = xz.NewReader(source)
-		reset = func() { source.Seek(0, 0) }
-	// bzip2 is disabled because I couldn't find a way to reset the reader
-	// case "bz2":
-	// 	log.Println("Using bz2")
-	// 	data = bzip2.NewReader(source)
-	// 	reset = func() { source.Seek(0, 0) }
-	case "gz":
-		log.Println("Using gz")
-		data, err = gzip.NewReader(source)
-		reset = func() {
-			source.Seek(0, 0)
-			d, _ := data.(*gzip.Reader)
-			d.Reset(source)
+		source, err = os.Open(inputFiles[k])
+		if err != nil {
+			log.Fatalln(err)
 		}
-	case "lz4":
-		log.Println("Using lz4")
-		data = lz4.NewReader(source)
-		reset = func() {
-			source.Seek(0, 0)
-			d, _ := data.(*lz4.Reader)
-			d.Reset(source)
-		}
-	// case "zlib":
-	// 	log.Println("Using zlib")
-	// 	data, err = zlib.NewReader(source)
-	// 	reset = func() {
-	// 		source.Seek(0, 0)
-	// 		d, _ := data.(zlib.Resetter)
-	// 		d.Reset(source, nil)
-	// 	}
-	default:
-		log.Println("Uncompressed stream")
-		err = nil
-		data = source
-		reset = func() { source.Seek(0, 0) }
-	}
-	if err != nil {
-		log.Println(err)
-	}
+		// streamHandle will exit but normcat will continue, so we can't defer close()
+		// here. We wouldn't want anyway. As long as normcat runs, source should stay open.
+		// defer source.Close()
 
+		// Code to read first 261 bytes of source and detect filetype.
+		var header [261]byte
+		_, err = source.Read(header[0:261])
+		if err != nil {
+			log.Println(err)
+		}
+
+		t, err := filetype.Get(header[0:261])
+		if err != nil {
+			log.Println(err)
+		}
+
+		// Return to the start of the file
+		source.Seek(0, 0)
+
+		// Depending on extension, set proper data and reset functions.
+		switch t.Extension {
+		case "xz":
+			log.Printf("Opening %s: using xz", inputFiles)
+			data, err = xz.NewReader(source)
+			reset = func() { source.Seek(0, 0) }
+			// bzip2 is disabled because I couldn't find a way to reset the reader
+			// case "bz2":
+			// 	log.Println("Using bz2")
+			// 	data = bzip2.NewReader(source)
+			// 	reset = func() { source.Seek(0, 0) }
+		case "gz":
+			log.Printf("Opening %s: using gz", inputFiles)
+			data, err = gzip.NewReader(source)
+			reset = func() {
+				source.Seek(0, 0)
+				d, _ := data.(*gzip.Reader)
+				d.Reset(source)
+			}
+		case "lz4":
+			log.Printf("Opening %s: using lz4", inputFiles)
+			data = lz4.NewReader(source)
+			reset = func() {
+				source.Seek(0, 0)
+				d, _ := data.(*lz4.Reader)
+				d.Reset(source)
+			}
+			// case "zlib":
+			// 	log.Println("Using zlib")
+			// 	data, err = zlib.NewReader(source)
+			// 	reset = func() {
+			// 		source.Seek(0, 0)
+			// 		d, _ := data.(zlib.Resetter)
+			// 		d.Reset(source, nil)
+			// 	}
+		default:
+			log.Printf("Opening %s: uncompressed", inputFiles)
+			err = nil
+			data = source
+			reset = func() { source.Seek(0, 0) }
+		}
+		if err != nil {
+			log.Println(err)
+		}
+
+		dataStreams = append(dataStreams, input{data, reset})
+	}
 	return
 }

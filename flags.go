@@ -28,7 +28,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -60,9 +59,9 @@ func init() {
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `
-Usage: normcat [OPTION]... [FILE]
-Read lines from [FILE] or stdin and print to stdout with a rate that follows a
-normal distribution. If the file is compressed, normcat will try to decompress
+Usage: normcat [OPTION]... [FILE]...
+Read lines from [FILE(s)] or stdin and print to stdout with a rate that follows
+a normal distribution. If the file is compressed, normcat will try to decompress
 it (formats supported: xz, gz, lz4).
 
   -n, -lines
@@ -97,7 +96,7 @@ Report bugs at <https://github.com/andmarios/normcat>
 		os.Exit(2)
 	}
 
-	dataFile = strings.Join(flag.Args(), " ")
+	inputFiles = flag.Args()
 
 	if !*verbose {
 		log.SetOutput(ioutil.Discard)

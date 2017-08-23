@@ -23,3 +23,6 @@ verify "1 2 3 1 2 " -n 5 -c tests/test.txt.xz
 
 echo -n "Test normcat cycling lz4 file:"
 verify "1 2 3 1 2 " -n 5 -c tests/test.txt.xz
+
+echo -n "Test normcat with many files:"
+verify "1 2 3 1 2 3 1 2 3 1 2 3 " tests/test.txt.xz tests/test.txt.gz tests/test.txt.lz4 tests/test.txt
