@@ -67,7 +67,7 @@ var inputFiles []string // set in init() of flags.go
 
 func main() {
 	// The dispatchBus will deliver the decoded messages to the workers.
-	dispatchBus := make(chan string, 1024*64)
+	dispatchBus := make(chan string, chanBuffer)
 
 	// Spawn our workers.
 	workerWg.Add(*printers)
@@ -165,7 +165,7 @@ func main() {
 
 }
 
-var wait = make(chan bool, 1024*60)
+var wait = make(chan bool, 1024*chanBuffer)
 
 // worker just print messages from the dispatch channel to stdout
 // checking periodically the rate and waiting accordingly

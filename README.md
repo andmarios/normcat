@@ -15,6 +15,11 @@ piping data to a kafka producer:
 
 ![normcat_use](https://user-images.githubusercontent.com/1239679/29490368-2b4aad4a-8542-11e7-973a-223f66087353.png)
 
+Normcat memory usage depends on the average line size. By default normcat will
+try to buffer 64*1024 entries (lines of input) into memory. If you prefer
+lower memory (buffer just 1024 entries) build with:
+
+    go build -tags lowmem
 
 ---
 
